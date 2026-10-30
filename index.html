@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head>
+  <link rel="icon" href="data:,">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Firstlight</title><link rel="stylesheet" href="style.css">
+</head><body>
+<div id="game"></div>
+<div id="hud" class="hidden">
+  <div id="tribe" class="panel">
+    <svg id="arc" width="84" height="46" viewBox="0 0 84 46"><path d="M6 42 A36 36 0 0 1 78 42" fill="none" stroke="#4A3420" stroke-width="2" stroke-dasharray="3 3"/><line x1="2" y1="42" x2="82" y2="42" stroke="#4A3420" stroke-width="2"/><circle id="sun" r="6" cx="6" cy="42" fill="#F2A33A"/></svg>
+    <div class="stats"><div>Tribe <b id="pop">0</b></div><div>Food <b id="food">0</b></div><div id="dayl">Day 1</div><div class="hpbar"><i id="hp"></i></div></div>
+  </div>
+  <div id="topbtns"><button id="menuBtn" class="btn">Menu</button></div>
+  <div id="hint">WASD/arrows move · Space act · E craft · B build · T torch · Q deposit</div>
+  <div id="toasts"></div>
+  <div id="hotbar"></div>
+  <div id="touch">
+    <div id="stick"><div id="knob"></div></div>
+    <div id="tbtns"><button id="tBuild" class="tb">Build</button><button id="tTorch" class="tb">Torch</button><button id="tInv" class="tb">Bag</button><button id="tAct" class="tb big">Act</button></div>
+  </div>
+  <div id="flash"></div>
+</div>
+<div id="inv" class="panel modal hidden">
+  <div class="phead"><h2>Inventory &amp; Crafting</h2><button class="btn x" data-close>✕</button></div>
+  <div class="cols"><div><h3>Carried</h3><div id="invGrid" class="grid"></div><h3>Tribe storage</h3><div id="storeGrid" class="grid"></div><button id="depBtn" class="btn">Deposit all (Q, near storage)</button></div>
+  <div><h3>Crafting</h3><div id="recipes"></div></div></div>
+</div>
+<div id="build" class="hidden">
+  <div id="cards"></div>
+  <div id="ghostBtns" class="hidden"><button id="placeBtn" class="btn ok">Place</button><button id="cancelBtn" class="btn">Cancel</button><span class="small">Tap or click a tile. Green = ok.</span></div>
+</div>
+<div id="menu" class="panel modal hidden">
+  <div class="phead"><h2>Menu</h2><button class="btn x" data-close>✕</button></div>
+  <p id="menuInfo" class="small"></p>
+  <button id="saveBtn" class="btn">Save now</button>
+  <button id="expBtn" class="btn">Export save</button>
+  <button id="impBtn" class="btn">Import save</button>
+  <button id="newBtn" class="btn">New World (this slot)</button>
+  <button id="titleBtn" class="btn">Save &amp; back to title</button>
+</div>
+<div id="title" class="screen">
+  <div class="panel tcard">
+    <h1>Firstlight</h1>
+    <p class="story">The world is fog, and the night has teeth.<br>Your tribe huddles in one cave around one dying fire.<br>Light a torch, and carry the light outward.</p>
+    <div id="slots"></div>
+    <div class="row small"><label>Seed for new world <input id="seedIn" placeholder="random"></label></div>
+    <p class="small">v<span id="ver"></span> · saves live in this browser · Export to keep a copy</p>
+  </div>
+</div>
+<div id="intro" class="screen hidden"><div class="panel tcard"><p class="story big">The world is fog, and the night has teeth.</p><p class="story big">Your tribe huddles in one cave around one dying fire.</p><p class="story big">Light a torch, and carry the light outward.</p><p class="small">Gather (Space / Act). Craft a Torch with E. Bring goods to the storage pile (Q). Press B to lay blueprints; your villagers will haul and build.</p><button id="beginBtn" class="btn ok">Begin</button></div></div>
+<div id="over" class="screen hidden"><div class="panel tcard"><h1>The fire goes out</h1><p id="overTxt" class="story"></p><button id="overNew" class="btn ok">New World</button><button id="overTitle" class="btn">Title</button></div></div>
+<input type="file" id="importFile" accept=".json,application/json" hidden>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<script>window.Phaser || document.write('<script src="lib/phaser.min.js"><\/script>')</script>
+<script src="js/data.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+</body></html>

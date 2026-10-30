@@ -1,0 +1,21 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Tap-to-talk test</title><style>body{font:18px sans-serif;padding:1em}button{font-size:1.2em;margin:.3em}</style>
+<h2>Villager tap-to-talk test</h2><div id=caps></div>
+<button id=vil>🧑 Tap villager</button><button id=mic>🎤 Speak</button>
+<div id=fb hidden><input id=txt placeholder="Type to villager"><button id=send>Send</button></div>
+<p>You: <b id=you>-</b></p><p>Villager: <b id=say>-</b></p><pre id=log></pre>
+<script>
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition, syn='speechSynthesis' in window;
+const log=m=>document.getElementById('log').textContent+=new Date().toLocaleTimeString()+' '+m+'\n';
+document.getElementById('caps').textContent=`recognition: ${!!SR} | synthesis: ${syn} | ${navigator.userAgent}`;
+if(!SR)document.getElementById('fb').hidden=false;
+function speak(t){document.getElementById('say').textContent=t;if(!syn)return log('no synthesis');
+ const u=new SpeechSynthesisUtterance(t),t0=performance.now();u.onstart=()=>log('speak start '+Math.round(performance.now()-t0)+'ms');u.onerror=e=>log('speak err '+e.error);speechSynthesis.cancel();speechSynthesis.speak(u);}
+function reply(q){q=q.toLowerCase();speak(/hello|hi/.test(q)?"Peace to you, traveler. The fire is warm.":/wood|tree/.test(q)?"The forest is east. Take an axe.":"I hear you. Rest by the fire.");}
+document.getElementById('vil').onclick=()=>speak("Welcome. The night is coming.");
+document.getElementById('send').onclick=()=>{const v=txt.value;you.textContent=v;reply(v);};
+document.getElementById('mic').onclick=()=>{if(!SR)return log('no recognition, use text box');
+ const r=new SR(),t0=performance.now();r.lang='en-US';r.interimResults=false;
+ r.onresult=e=>{const t=e.results[0][0].transcript;log('heard in '+Math.round(performance.now()-t0)+'ms: '+t);you.textContent=t;reply(t);};
+ r.onerror=e=>log('rec err '+e.error);r.start();log('listening');};
+</script>

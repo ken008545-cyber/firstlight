@@ -143,7 +143,8 @@
 
   // ---- boot ----
   $('ver').textContent = FL.VERSION;
-  FL.phaser = new Phaser.Game({ type: Phaser.AUTO, parent: 'game', backgroundColor: '#1E2228', scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight }, scene: [], input: { activePointers: 3 } });
+  FL.phaser = new Phaser.Game({ type: Phaser.AUTO, parent: 'game', backgroundColor: '#1E2228', pixelArt: true, roundPixels: true, scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight }, scene: [], input: { activePointers: 3 } });
   FL.phaser.scene.add('world', FL.World, false);
   ui.renderSlots();
+  document.addEventListener('click', ev => { if (ev.target.closest && ev.target.closest('button') && FL.sfx) FL.sfx('ui_click'); }, true);
 })(window.FL);

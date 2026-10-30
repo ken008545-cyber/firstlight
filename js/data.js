@@ -1,7 +1,7 @@
 // Firstlight data, RNG and seeded world generation
 window.FL = window.FL || {};
 (function (FL) {
-  FL.VERSION = '0.1.0';
+  FL.VERSION = '0.2.0';
   FL.SAVE_VERSION = 1;
   FL.T = 32; FL.W = 80; FL.H = 80;
   FL.DAY_LEN = 240; // seconds per full day+night

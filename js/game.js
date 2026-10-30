@@ -15,9 +15,27 @@
     constructor() { super('world'); }
     init(data) { this.startData = data || {}; }
 
+    preload() {
+      const sp = (k, f, w, h) => this.load.spritesheet('spr_' + k, 'assets/sprites/' + f + '.png', { frameWidth: w, frameHeight: h });
+      sp('player', 'player', 16, 24); sp('villager_a', 'villager_a', 16, 24); sp('villager_b', 'villager_b', 16, 24);
+      sp('raptor', 'raptor', 32, 24); sp('shadow', 'shadow_creature', 24, 24); sp('tree', 'tree', 32, 48); sp('rocks', 'rocks', 16, 16);
+      sp('hut', 'hut', 48, 48); sp('book', 'book', 16, 16); sp('lectern', 'lectern', 16, 32); sp('reader_tab', 'reader_tab', 24, 12);
+      this.load.image('spr_reader_frame', 'assets/sprites/reader_frame.png');
+      ['building_finished', 'chop_wood', 'craft', 'day_to_night', 'fire_crackle_loop', 'item_pickup', 'mine_stone', 'pick_berries', 'place_building', 'raptor_screech', 'shadow_hiss', 'spear_swing_hit', 'torch_light', 'ui_click', 'villager_hurt'].forEach(k => this.load.audio('sfx_' + k, 'assets/sfx/' + k + '.ogg'));
+    }
+    sfx(k, vol) {
+      const key = 'sfx_' + k; if (!this.cache.audio.exists(key) || !this.sound) return;
+      const now = this.time2b = (performance.now()); this._sfxT = this._sfxT || {};
+      if (now - (this._sfxT[k] || 0) < 90) return; this._sfxT[k] = now;
+      try { this.sound.play(key, { volume: vol === undefined ? 0.6 : vol }); } catch (e) {}
+    }
+    // put a spritesheet on an entity image at whole-number scale (pixel art)
+    useSheet(e, key, scale, frames) { if (!this.textures.exists(key)) return; e.setTexture(key, frames[0]); e._sheet = { key, scale, frames }; e.setScale(scale); }
     create() {
-      FL.game = this;
+      FL.game = this; this.net = this.startData.pid ? FL.net : null;
       this.makeTextures();
+      FL.sfx = k => this.sfx(k);
+      if (this.cache.audio.exists('sfx_fire_crackle_loop')) { try { this.fireLoop = this.sound.add('sfx_fire_crackle_loop', { loop: true, volume: 0.25 }); this.fireLoop.play(); } catch (e) {} this.events.once('shutdown', () => this.fireLoop && this.fireLoop.stop()); }
       const sd = this.startData.save;
       this.seed = sd ? sd.seed : (this.startData.seed >>> 0);
       this.slot = this.startData.slot || 1;
@@ -26,7 +44,7 @@
       this.objHp = new Map(); this.regrow = new Map(); this.diffs = new Set();
       this.explored = new Uint8Array(W * H); this.vis = new Uint8Array(W * H); this.light = new Uint8Array(W * H);
       this.bAt = new Map(); this.buildings = []; this.villagers = []; this.enemies = []; this.claims = new Set();
-      this.players = {}; this._actor = null; this.localId = 'p1';
+      this.players = {}; this._actor = null; this.localId = this.startData.pid || 'p1';
       this.storage = {}; this.over = false; this.fogTimer = 0; this.uiTimer = 0; this.autoTimer = 0; this.spawnTimer = 0;
       this.nextVid = 1;
 
@@ -111,6 +129,12 @@
         // bones
         ctx.strokeStyle = '#ece6d6'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(at(6) + 7, 22); ctx.lineTo(at(6) + 24, 12); ctx.moveTo(at(6) + 9, 12); ctx.lineTo(at(6) + 22, 24); ctx.stroke();
       });
+      { const tex = this.textures.get('objs'), ctx = tex.getContext(); ctx.imageSmoothingEnabled = false;
+        const src = k => this.textures.exists('spr_' + k) && this.textures.get('spr_' + k).getSourceImage();
+        const tr = src('tree'), rk = src('rocks');
+        if (tr) ctx.clearRect(T, 0, T, T); // trees drawn as 2x sprite images in drawObj
+        if (rk) { ctx.clearRect(2 * T, 0, T, T); ctx.drawImage(rk, 0, 0, 16, 16, 2 * T, 0, 32, 32); ctx.clearRect(5 * T, 0, T, T); ctx.drawImage(rk, 32, 0, 16, 16, 5 * T, 0, 32, 32); }
+        tex.refresh(); }
       mk('fogt', T, T, ctx => { ctx.fillStyle = css(C.fog); ctx.fillRect(0, 0, T, T); });
       const body = (key, fill, band) => mk(key, 24, 24, ctx => { ctx.fillStyle = fill; ctx.strokeStyle = css(C.text); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(12, 12, 9, 0, 7); ctx.fill(); ctx.stroke(); if (band) { ctx.fillStyle = band; ctx.fillRect(4, 7, 16, 3); } });
       body('player', '#d9a874', css(C.torch)); body('villager', '#b88a5a', '#6B8E3A');
@@ -140,11 +164,12 @@
     addVillager(x, y, d) {
       const v = this.add.image(x, y, 'villager').setDepth(5);
       Object.assign(v, { vid: this.nextVid++, hp: 10, hunger: 80, name: FL.NAMES[(this.nextVid * 7) % FL.NAMES.length], path: null, state: null, timer: 0, carry: null, haul: null, target: null, cd: 0, think: 0 }, d || {});
-      this.villagers.push(v); return v;
+      this.useSheet(v, v.vid % 2 ? 'spr_villager_a' : 'spr_villager_b', 2, [4, 5, 0, 1, 2, 3]); this.villagers.push(v); return v;
     }
     addBuilding(type, tx, ty, done, extra) {
       const b = { type, tx, ty, done: !!done, delivered: {}, incoming: {}, work: 0, ...(extra || {}) };
       b.img = this.add.image(center(tx), center(ty), type === 'torch' ? 'torchpost' : type).setDepth(2);
+      if (type === 'hut' && this.textures.exists('spr_hut')) b.img.setTexture('spr_hut', done ? 3 : 0);
       this.buildings.push(b); this.bAt.set(idx(tx, ty), b);
       this.styleBuilding(b);
       if (this.player && this.villagers && FL.ui.playing) { b.img.setScale(1, 0.1); this.tweens.add({ targets: b.img, scaleY: 1, duration: 350, ease: 'Back.Out' }); }
@@ -152,11 +177,16 @@
     }
     styleBuilding(b) {
       b.img.setAlpha(b.done ? 1 : 0.45);
+      if (b.type === 'hut' && b.img.texture.key === 'spr_hut') { const w = BUILD.hut.work, f = b.done ? 3 : b.work <= 0 ? 0 : b.work < w / 2 ? 1 : 2; b.img.setFrame(f); if (!b.done && f) b.img.setAlpha(0.85); }
       if (b.done && (b.type === 'campfire' || b.type === 'torch') && !b.glow) b.glow = this.add.image(b.img.x, b.img.y, 'glow').setDepth(51).setBlendMode(Phaser.BlendModes.ADD).setScale(b.type === 'torch' ? 0.9 : 1.4);
     }
     drawObj(i) {
       const o = this.obj[i], x = i % W, y = (i / W) | 0;
       if (o) this.oLayer.putTileAt(10 + o, x, y); else this.oLayer.removeTileAt(x, y);
+      if (!this.textures.exists('spr_tree')) return; this.treeImg = this.treeImg || new Map();
+      const ti = this.treeImg.get(i);
+      if (o === 1 && !ti) this.treeImg.set(i, this.add.image(center(x), (y + 1) * T, 'spr_tree', (x + y) & 1).setOrigin(0.5, 1).setScale(2).setDepth(4 + y / H));
+      else if (o !== 1 && ti) { ti.destroy(); this.treeImg.delete(i); }
     }
     setObj(i, o) { this.obj[i] = o; this.objHp.delete(i); this.diffs.add(i); this.drawObj(i); }
 
@@ -302,10 +332,12 @@
       const i = idx(x, y), o = this.obj[i]; if (!o || !ODEF[o].hp) return null;
       if (this.vis[i] === this.vstamp) this.burst(center(x), center(y), [0, 0x7a5230, 0xa5a59c, 0x7a3a8a, 0xa8b85a, 0xa8603a, 0xece6d6][o], byPlayer ? 6 : 3);
       const hp = (this.objHp.has(i) ? this.objHp.get(i) : ODEF[o].hp) - dmg;
+      if (byPlayer && this.isLocalActor()) this.sfx(o === 1 ? 'chop_wood' : o === 2 ? 'mine_stone' : o === 3 ? 'pick_berries' : 'item_pickup');
       if (hp > 0) { this.objHp.set(i, hp); this.diffs.add(i); return null; }
       const got = {};
       for (const [k, n, ch] of ODEF[o].drops) if (ch === undefined || Math.random() < ch) got[k] = (got[k] || 0) + n;
       if (ODEF[o].regrow) { this.setObj(i, O.BUSH_EMPTY); this.regrow.set(i, this.worldTime() + FL.DAY_LEN * 0.8); } else this.setObj(i, 0);
+      if (byPlayer && this.isLocalActor()) this.sfx('item_pickup', 0.5);
       if (byPlayer) { for (const k in got) this.addItem(k, got[k]); this.say('+ ' + Object.entries(got).map(([k, n]) => n + ' ' + k).join(', ')); }
       return got;
     }
@@ -356,7 +388,7 @@
     bpReady(b) { const c = BUILD[b.type].cost; for (const k in c) if ((b.delivered[k] || 0) < c[k]) return false; return true; }
     checkDone(b) {
       if (b.done || b.work < BUILD[b.type].work) return;
-      b.done = true; this.styleBuilding(b); b.img.setScale(1, 0.2); this.tweens.add({ targets: b.img, scaleY: 1, duration: 600, ease: 'Bounce.Out' }); this.burst(b.img.x, b.img.y, 0xD9C38A, 10); this.recomputeLight();
+      b.done = true; this.sfx('building_finished'); this.styleBuilding(b); b.img.setScale(1, 0.2); this.tweens.add({ targets: b.img, scaleY: 1, duration: 600, ease: 'Bounce.Out' }); this.burst(b.img.x, b.img.y, 0xD9C38A, 10); this.recomputeLight();
       FL.ui.toast(`${BUILD[b.type].name} finished!`);
       if (b.type === 'hut') { this.addVillager(center(b.tx), center(b.ty + 1)); FL.ui.toast('A new family joins the tribe.'); }
       for (const v of this.villagers) if (v.target === b) { v.state = null; v.target = null; }
@@ -424,6 +456,7 @@
 
     // ---------- enemies ----------
     hurt(e, dmg, from) {
+      this.sfx(e.kind ? 'spear_swing_hit' : 'villager_hurt');
       e.hp -= dmg; e.setTintFill && e.setTintFill(C.danger); this.time2 = 0;
       this.timeEvent(() => e.active && e.clearTint && e.clearTint(), 120);
       if (from && e.kind) { const a = Math.atan2(e.y - from.y, e.x - from.x); this.moveEnt(e, Math.cos(a) * 14, Math.sin(a) * 14, e.kind === 'shadow'); }
@@ -434,6 +467,8 @@
       const e = this.add.image(center(x), center(y), kind).setDepth(5);
       Object.assign(e, { kind, hp: kind === 'raptor' ? 9 : 4, cd: 0, wander: 0, dir: [0, 0] });
       if (kind === 'shadow') e.setAlpha(0.9);
+      this.useSheet(e, kind === 'raptor' ? 'spr_raptor' : 'spr_shadow', 2, kind === 'raptor' ? [0, 1, 2, 3] : [0, 1, 2]);
+      if (this.light && FL.ui.playing && Math.hypot(e.x - this.local.x, e.y - this.local.y) < 12 * T) this.sfx(kind === 'raptor' ? 'raptor_screech' : 'shadow_hiss', 0.4);
       this.enemies.push(e); return e;
     }
     findSpawn(minD, maxD, pred) {
@@ -488,10 +523,11 @@
       if (this.over || !FL.ui.playing) return;
       const dt = Math.min(0.05, dms / 1000);
       // time
+      const cl = !!(this.net && this.net.client);
       const prevNight = this.isNight();
-      this.time.t += dt / FL.DAY_LEN;
+      if (!cl) this.time.t += dt / FL.DAY_LEN;
       if (this.time.t >= 1) { this.time.t -= 1; this.time.day++; this.onDawn(); }
-      if (this.isNight() !== prevNight) { FL.ui.toast(this.isNight() ? 'Night falls. Stay in the light.' : 'Dawn. The shadows melt away.'); for (const v of this.villagers) if (!v.haul && v.state !== 'chop' && v.state !== 'building') { v.path = null; this.release(v); v.state = null; v.think = 0; } }
+      if (this.isNight() !== prevNight) { if (this.isNight()) this.sfx('day_to_night'); FL.ui.toast(this.isNight() ? 'Night falls. Stay in the light.' : 'Dawn. The shadows melt away.'); for (const v of this.villagers) if (!v.haul && v.state !== 'chop' && v.state !== 'building') { v.path = null; this.release(v); v.state = null; v.think = 0; } }
       // player
       // local input becomes a command each frame (a network host would receive these from peers)
       { const k = this.keys; let mx = 0, my = 0;
@@ -501,12 +537,15 @@
         this.exec({ t: 'input', mx, my, act: !!(k.SPACE.isDown || k.F.isDown || FL.input.actionHeld) }); }
       for (const id in this.players) this.as(id, () => this.stepPlayer(dt));
       // villagers
+      if (this.net) this.net.frame(dt);
+      if (!cl) {
       for (const v of this.villagers) if (v.hp > 0) this.updateVillager(v, dt);
       for (const v of this.villagers.slice()) if (v.hp <= 0) { this.release(v); if (v.haul) { this.storage[v.haul.k] = (this.storage[v.haul.k] || 0) + v.haul.n; v.haul.b.incoming[v.haul.k] -= v.haul.n; } FL.ui.toast(`${v.name} has died.`); v.destroy(); this.villagers.splice(this.villagers.indexOf(v), 1); }
       if (!this.villagers.length) { this.over = true; FL.ui.gameOver(this.time.day); return; }
       this.updateEnemies(dt);
       // regrow
       if (this.regrow.size) { const now = this.worldTime(); for (const [i, at] of this.regrow) if (now >= at) { this.regrow.delete(i); if (this.obj[i] === O.BUSH_EMPTY) this.setObj(i, O.BUSH); } }
+      }
       // glows
       const nf = this.nightF();
       for (const b of this.buildings) if (b.glow) { const f = Math.sin(this.animT * 9 + b.tx) * 0.04 + Math.random() * 0.04; b.glow.setAlpha(0.15 + 0.35 * nf + f).setScale((b.type === 'torch' ? 0.9 : 1.4) * (1 + f)); }
@@ -518,10 +557,15 @@
       for (const id in this.players) this.animEnt(this.players[id], dt, 0.08); for (const v of this.villagers) this.animEnt(v, dt, 0.08); for (const e of this.enemies) this.animEnt(e, dt, e.kind === 'shadow' ? 0.15 : 0.1, true);
       this.drawBars(); this.drawGhost();
       this.uiTimer -= dt; if (this.uiTimer <= 0) { this.uiTimer = 0.25; FL.ui.refresh(); }
-      this.autoTimer += dt; if (this.autoTimer > 60) { this.autoTimer = 0; FL.ui.autosave(); }
+      if (!cl) this.autoTimer += dt; if (this.autoTimer > 60) { this.autoTimer = 0; FL.ui.autosave(); }
     }
     animEnt(e, dt, amp, wob) {
-      const moved = e._px !== undefined && Math.hypot(e.x - e._px, e.y - e._py) > 0.3; e._px = e.x; e._py = e.y;
+      const moved = e._px !== undefined && Math.hypot(e.x - e._px, e.y - e._py) > 0.3;
+      if (e._sheet) { const S = e._sheet, dx = e.x - (e._px === undefined ? e.x : e._px); if (Math.abs(dx) > 0.3) e.setFlipX(dx < 0); e._px = e.x; e._py = e.y;
+        e._ft = (e._ft || 0) + dt; const ch = S.frames.length === 6; const fr = ch ? (moved ? S.frames.slice(2) : S.frames.slice(0, 2)) : S.frames; const fps = ch ? (moved ? 8 : 2) : (e.kind === 'shadow' ? 6 : 10);
+        { const nf = fr[Math.floor(e._ft * fps) % fr.length]; if (e.frame && e.frame.name !== nf && e.texture && e.texture.has(nf)) e.setFrame(nf, false, false); } e.setScale(S.scale); e.rotation = 0;
+        if (e.kind === 'shadow') { e._ph = (e._ph || 0) + dt * 3; e.setAlpha(0.7 + 0.2 * Math.sin(e._ph * 0.7)); } return; }
+      e._px = e.x; e._py = e.y;
       e._ph = (e._ph || Math.random() * 6) + dt * (moved ? 14 : 3);
       const s = Math.sin(e._ph), k = moved ? amp : amp * 0.25;
       e.setScale((1 + k * 0.6 * Math.abs(s)) * (e.flipX ? 1 : 1), 1 - k * Math.abs(s));
@@ -570,6 +614,7 @@
     get sel() { return this.player.sel; } set sel(v) { this.player.sel = v; }
     addPlayer(id, x, y) {
       const p = this.add.image(x || 0, y || 0, 'player').setDepth(6);
+      this.useSheet(p, 'spr_player', 2, [4, 5, 0, 1, 2, 3]);
       Object.assign(p, { id, isPlayer: true, hp: 10, cd: 0, hurtT: 0, path: null, autoTile: null, face: [0, 1], inv: {}, hotbar: new Array(8).fill(null), sel: 0, input: { mx: 0, my: 0, act: false } });
       p.glow = this.add.image(0, 0, 'glow').setDepth(51).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
       if (id !== this.localId) p.setTint(0xd9c38a);
@@ -583,16 +628,17 @@
       if (this.over || !FL.ui.playing) return false;
       const pid = cmd.pid || this.localId; if (!this.players[pid]) return false;
       if (this.onCommand) this.onCommand({ ...cmd, pid }); // hook for a future network layer
+      if (this.net && this.net.client && pid === this.localId) return this.net.forward(cmd);
       return this.as(pid, () => {
         switch (cmd.t) {
           case 'input': this.player.input = { mx: +cmd.mx || 0, my: +cmd.my || 0, act: !!cmd.act }; return true;
           case 'act': this.act(cmd.tile); return true;
           case 'goto': this.gotoCmd(cmd.x | 0, cmd.y | 0); return true;
-          case 'craft': { const r = FL.RECIPES.find(r => r.out === cmd.out); return !!r && this.craft(r); }
+          case 'craft': { const r = FL.RECIPES.find(r => r.out === cmd.out); const ok = !!r && this.craft(r); if (ok) this.sfx('craft'); return ok; }
           case 'deposit': return this.deposit(true);
-          case 'torch': this.placeTorch(); return true;
+          case 'torch': { const n = this.buildings.length; this.placeTorch(); if (this.buildings.length > n) this.sfx('torch_light'); return true; }
           case 'select': this.select(cmd.slot | 0); return true;
-          case 'place': return this.placeCmd(cmd.type, cmd.x | 0, cmd.y | 0);
+          case 'place': { const ok = this.placeCmd(cmd.type, cmd.x | 0, cmd.y | 0); if (ok) this.sfx('place_building'); return ok; }
         }
         return false;
       });
@@ -618,7 +664,8 @@
       for (const v of s.villagers) { let carry = v.carry; if (v.haul) { carry = carry || {}; carry[v.haul.k] = (carry[v.haul.k] || 0) + v.haul.n; } this.addVillager(v.x, v.y, { hp: v.hp, hunger: v.hunger, name: v.name, carry }); }
       const bin = atob(s.explored || ''); for (let k = 0; k < bin.length; k++) { const b = bin.charCodeAt(k); for (let j = 0; j < 8; j++) if (b & (1 << j)) this.explored[k * 8 + j] = 1; }
       this.local.setPosition(s.player.x, s.player.y); this.local.hp = s.player.hp;
-      for (const q of s.players || []) if (q.id === this.localId) Object.assign(this.local, { inv: q.inv || {}, hotbar: q.hotbar || this.local.hotbar, sel: q.sel || 0 });
+      for (const q of s.players || []) if (q.id === this.localId) { Object.assign(this.local, { inv: q.inv || {}, hotbar: q.hotbar || this.local.hotbar, sel: q.sel || 0 }); if (this.startData.pid) this.local.setPosition(q.x, q.y); }
+        else if (this.startData.pid && !this.players[q.id]) this.addPlayer(q.id, q.x, q.y);
       this.syncHotbar();
     }
   }

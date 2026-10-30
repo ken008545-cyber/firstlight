@@ -42,13 +42,18 @@
       if (sc && sc.sys.settings.active) sc.scene.restart(data); else FL.phaser.scene.start('world', data);
       if (!save) $('intro').classList.remove('hidden');
     },
+    startNet(save, pid) {
+      ui.slot = 0; ui.playing = false; $('title').classList.add('hidden'); $('over').classList.add('hidden'); $('intro').classList.add('hidden'); ui.closeAll();
+      const data = { slot: 0, save, seed: save.seed, pid }; const sc = FL.phaser.scene.getScene('world');
+      if (sc && sc.sys.settings.active) sc.scene.restart(data); else FL.phaser.scene.start('world', data);
+    },
     newSeed() { const v = $('seedIn').value.trim(); if (!v) return (Math.random() * 1e9) >>> 0; if (/^\d+$/.test(v)) return +v >>> 0; let h = 2166136261; for (const c of v) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; },
     onGameStart(g) {
       ui.game = g; $('hud').classList.remove('hidden');
       if ($('intro').classList.contains('hidden')) ui.playing = true;
       ui.refresh(); ui.refreshHotbar(); if (!g.startData.save) ui.autosave();
     },
-    autosave() { const g = ui.game; if (!g || g.over) return; saves.write(ui.slot, g.serialize()); },
+    autosave() { const g = ui.game; if (!g || g.over || (g.net && g.net.client)) return; saves.write(ui.slot, g.serialize()); },
     exportSlot(n) {
       const s = n ? saves.read(n) : ui.game.serialize(); if (!s) return;
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(s)], { type: 'application/json' }));
@@ -114,7 +119,7 @@
     else if (d.close !== undefined) ui.closeAll();
   });
   $('menuBtn').onclick = () => { const h = $('menu').classList.contains('hidden'); ui.closeAll(); if (h) { $('menu').classList.remove('hidden'); $('menuInfo').textContent = `Slot ${ui.slot} · seed ${ui.game.seed} · save v${FL.SAVE_VERSION} · autosaves every minute and at dawn`; } };
-  $('saveBtn').onclick = () => { ui.autosave(); ui.toast('Saved'); };
+  $('saveBtn').onclick = () => { if (FL.net && FL.net.client) { ui.toast('Host saves the world'); return; } ui.autosave(); ui.toast('Saved'); };
   $('expBtn').onclick = () => { ui.autosave(); ui.exportSlot(ui.slot); };
   $('impBtn').onclick = () => ui.importTo(ui.slot);
   $('newBtn').onclick = () => { if (confirm('Abandon this world and start a new one in this slot?')) ui.start(ui.slot, null, (Math.random() * 1e9) >>> 0); };
@@ -145,6 +150,39 @@
   $('ver').textContent = FL.VERSION;
   FL.phaser = new Phaser.Game({ type: Phaser.AUTO, parent: 'game', backgroundColor: '#1E2228', pixelArt: true, roundPixels: true, scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight }, scene: [], input: { activePointers: 3 } });
   FL.phaser.scene.add('world', FL.World, false);
+  if (FL.net) {
+    const hostNow = () => { const c = FL.net.host(); if (c) { FL.titleShowCode && FL.titleShowCode(c); ui.toast('Hosting. Code: ' + c); } };
+    // Title Host tab: open (or start) a world in slot 1, then host it once the scene is up.
+    $('hostBtn').onclick = () => {
+      if (ui.game && ui.playing) return hostNow();
+      const s = saves.read(1); ui.start(1, s, s ? undefined : ui.newSeed());
+      const wait = setInterval(() => { if (ui.game && ui.game.local) { clearInterval(wait); hostNow(); } }, 100);
+    };
+    $('hostBtnGame').onclick = hostNow;
+    $('joinBtn').onclick = () => FL.net.join($('joinIn').value);
+    const st = FL.net.status; FL.net.status = m => { st(m); const e = $('netStatus2'); if (e) e.textContent = m; };
+  } else { $('hostBtn').classList.add('hidden'); $('hostBtnGame').classList.add('hidden'); $('joinBtn').disabled = true; }
+  // ---- settings (title Settings tab), stored in localStorage ----
+  const SKEY = 'firstlight.settings';
+  const set = FL.settings = Object.assign({ music: 70, sfx: 80, voice: true, touch: 'Auto', motion: false }, (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })());
+  const applySet = () => {
+    try { localStorage.setItem(SKEY, JSON.stringify(set)); } catch (e) {}
+    const touch = set.touch === 'On' || (set.touch === 'Auto' && FL.isTouch); document.body.classList.toggle('touch', touch);
+    document.body.classList.toggle('reduce-motion', !!set.motion);
+    const g = ui.game; if (g && g.fireLoop) try { g.fireLoop.setVolume(0.25 * set.music / 100); } catch (e) {}
+  };
+  FL.applySettings = applySet;
+  if ($('setMusic')) {
+    $('setMusic').value = set.music; $('setSfx').value = set.sfx; $('setVoice').checked = !!set.voice; $('setTouch').value = set.touch; $('setMotion').checked = !!set.motion;
+    $('setMusic').oninput = e => { set.music = +e.target.value; applySet(); };
+    $('setSfx').oninput = e => { set.sfx = +e.target.value; applySet(); };
+    $('setVoice').onchange = e => { set.voice = e.target.checked; applySet(); if (!set.voice && window.speechSynthesis) speechSynthesis.cancel(); };
+    $('setTouch').onchange = e => { set.touch = e.target.value; applySet(); };
+    $('setMotion').onchange = e => { set.motion = e.target.checked; applySet(); };
+    $('exportBtn2').onclick = () => { const n = [1, 2, 3].find(n => saves.read(n)); if (n) ui.exportSlot(n); else ui.toast('No saved world to export yet.'); };
+    $('importBtn2').onclick = () => ui.importTo([1, 2, 3].find(n => !saves.read(n)) || 1);
+  }
+  applySet();
   ui.renderSlots();
   document.addEventListener('click', ev => { if (ev.target.closest && ev.target.closest('button') && FL.sfx) FL.sfx('ui_click'); }, true);
 })(window.FL);

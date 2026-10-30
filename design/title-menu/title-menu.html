@@ -1,0 +1,46 @@
+<!-- Firstlight title menu draft (Formara). Drop-in for #title in index.html.
+     Keeps existing ids: slots, joinIn, joinBtn, seedIn, netStatus, ver, hostBtn (moved here from the in-game menu). -->
+<div id="title" class="screen fl-title">
+  <div class="fl-fog"></div>
+  <div class="fl-fire"><span></span><span></span><span></span></div>
+  <div class="panel fl-card">
+    <h1 class="fl-logo">Firstlight</h1>
+    <p class="story fl-tag">The world is fog, and the night has teeth.</p>
+
+    <nav class="fl-tabs" role="tablist">
+      <button class="fl-tab on" data-pane="play">Play</button>
+      <button class="fl-tab" data-pane="host">Host</button>
+      <button class="fl-tab" data-pane="join">Join</button>
+      <button class="fl-tab" data-pane="settings">Settings</button>
+    </nav>
+
+    <section class="fl-pane on" data-pane="play">
+      <div id="slots"></div>
+      <label class="fl-field">Seed for a new world <input id="seedIn" placeholder="random" inputmode="numeric"></label>
+    </section>
+
+    <section class="fl-pane" data-pane="host">
+      <p class="small">Open your world so friends can join. Keep this tab open while they play; only you save.</p>
+      <button id="hostBtn" class="btn ok fl-big">Host my world</button>
+      <div id="hostCode" class="fl-code hidden"><span id="hostCodeTxt">------</span><button id="copyCode" class="btn">Copy</button></div>
+    </section>
+
+    <section class="fl-pane" data-pane="join">
+      <p class="small">Type the room code your friend sees on their Host screen.</p>
+      <input id="joinIn" class="fl-codebox" maxlength="8" placeholder="CODE" autocapitalize="characters" autocomplete="off">
+      <button id="joinBtn" class="btn ok fl-big">Join</button>
+    </section>
+
+    <section class="fl-pane" data-pane="settings">
+      <label class="fl-field">Music <input id="setMusic" type="range" min="0" max="100" value="70"></label>
+      <label class="fl-field">Sounds <input id="setSfx" type="range" min="0" max="100" value="80"></label>
+      <label class="fl-field">Read-aloud voice <input id="setVoice" type="checkbox" checked></label>
+      <label class="fl-field">Touch controls <select id="setTouch"><option>Auto</option><option>On</option><option>Off</option></select></label>
+      <label class="fl-field">Reduce motion <input id="setMotion" type="checkbox"></label>
+      <div class="row"><button id="exportBtn2" class="btn">Export save</button><button id="importBtn2" class="btn">Import save</button></div>
+    </section>
+
+    <p id="netStatus" class="small"></p>
+    <p class="small fl-foot">v<span id="ver"></span> · saves live in this browser · Export to keep a copy</p>
+  </div>
+</div>

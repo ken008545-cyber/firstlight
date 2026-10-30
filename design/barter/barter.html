@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Firstlight Barter (mockup)</title><link rel="stylesheet" href="barter.css"></head>
+<body><!-- Static mockup, no game wiring. Shell values from design/WEAPONS-CRAFTING.md §2c. Fair = offer >= ask*0.9 -->
+<div class="screen good" id="scr"><h1>Trade with Villager Ama</h1><div class="row">
+<div class="panel"><h2>Your bag</h2><div class="grid" id="bag"></div>
+<div class="offer"><h2>Your offer: <span id="ot">0</span> 🐚</h2><div class="grid" id="offer"></div></div></div>
+<div class="mid"><svg class="scale" viewBox="0 0 180 140"><rect x="86" y="40" width="8" height="90" fill="#4A3420"/><rect x="60" y="128" width="60" height="8" fill="#4A3420"/>
+<g class="beam"><rect x="10" y="36" width="160" height="8" fill="#8A6A44" stroke="#4A3420" stroke-width="2"/>
+<path class="pan" d="M10 44 L0 80 H40 Z" stroke="#4A3420" stroke-width="2"/><path class="pan" d="M170 44 L140 80 H180 Z" stroke="#4A3420" stroke-width="2"/></g>
+<circle cx="90" cy="40" r="6" fill="#F2A33A" stroke="#4A3420" stroke-width="2"/></svg>
+<div class="state" id="st">FAIR</div><div class="total" id="ratio"></div><button>Trade</button></div>
+<div class="panel"><h2>Villager's goods</h2><div class="grid" id="vil"></div>
+<div class="offer"><h2>You ask: <span id="at">0</span> 🐚</h2><div class="grid" id="ask"></div></div></div>
+</div></div>
+<script>
+const V={Wood:1,Stone:1,Fiber:1,Berries:2,Flint:2,Bone:2,'Raw Meat':3,Feather:3,Hide:4,Cordage:4,Coal:4,'Cooked Meat':6,Leather:8,'Clay Pot':8,'Copper Bar':8,'Iron Bar':20,'Silver Bar':40,Glowstone:120};
+const bag=[['Wood',12],['Hide',3],['Flint',5],['Berries',8],['Cordage',2],['Raw Meat',4],['Bone',6],['Coal',3]];
+const vil=[['Clay Pot',2],['Leather',3],['Copper Bar',2],['Cooked Meat',5],['Iron Bar',1],['Feather',6]];
+let offer=[['Hide',3],['Flint',5]], ask=[['Leather',2],['Clay Pot',1]]; // demo state
+function slot(it,drag,src){const d=document.createElement('div');d.className='slot';if(it){d.innerHTML=`${it[0]}<i>${V[it[0]]}</i><b>${it[1]}</b>`;if(drag){d.draggable=true;d.ondragstart=e=>e.dataTransfer.setData('t',JSON.stringify([src,it[0]]))}}return d}
+function sum(l){return l.reduce((a,[n,c])=>a+V[n]*c,0)}
+function zone(el,list,src){el.ondragover=e=>e.preventDefault();el.ondrop=e=>{const[s,n]=JSON.parse(e.dataTransfer.getData('t'));if(s!==src)return;const f=list.find(x=>x[0]==n);f?f[1]++:list.push([n,1]);draw()}}
+function draw(){
+ for(const[id,l,dr,src]of[['bag',bag,1,'me'],['vil',vil,1,'npc'],['offer',offer,0],['ask',ask,0]]){const g=document.getElementById(id);g.innerHTML='';for(let i=0;i<8;i++)g.appendChild(slot(l[i],dr,src))}
+ const o=sum(offer),a=sum(ask),ok=a>0&&o>=a*0.9;ot.textContent=o;at.textContent=a;
+ scr.className='screen '+(ok?'good':'bad');st.textContent=ok?'FAIR ✓':'NOT FAIR';ratio.textContent=`${o} / ${a} 🐚 (need ≥ ${Math.ceil(a*0.9)})`;}
+zone(document.getElementById('offer'),offer,'me');zone(document.getElementById('ask'),ask,'npc');draw();
+</script></body></html>

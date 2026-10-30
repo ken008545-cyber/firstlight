@@ -9,6 +9,10 @@
   const center = t => t * T + T / 2;
   const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  // water prototype (Mythorion): Digging Stick recipe + item colors; PIT ground (5) draws with tileset frame 6
+  if (FL.DIG_RECIPE && !FL.RECIPES.includes(FL.DIG_RECIPE)) FL.RECIPES.push(FL.DIG_RECIPE);
+  Object.assign(FL.RES_COLOR, { Dirt: '#6a4e30', 'Water Pot': '#3E7CA6', 'Digging Stick': '#8a6a44' });
+  const gTile = v => v === 5 ? 6 : v;
   FL.input = FL.input || { stick: { x: 0, y: 0 }, actionHeld: false };
 
   class World extends Phaser.Scene {
@@ -27,24 +31,24 @@
       const key = 'sfx_' + k; if (!this.cache.audio.exists(key) || !this.sound) return;
       const now = this.time2b = (performance.now()); this._sfxT = this._sfxT || {};
       if (now - (this._sfxT[k] || 0) < 90) return; this._sfxT[k] = now;
-      try { this.sound.play(key, { volume: vol === undefined ? 0.6 : vol }); } catch (e) {}
+      try { this.sound.play(key, { volume: (vol === undefined ? 0.6 : vol) * ((FL.settings ? FL.settings.sfx : 80) / 100) }); } catch (e) {}
     }
     // put a spritesheet on an entity image at whole-number scale (pixel art)
     useSheet(e, key, scale, frames) { if (!this.textures.exists(key)) return; e.setTexture(key, frames[0]); e._sheet = { key, scale, frames }; e.setScale(scale); }
     create() {
-      FL.game = this;
+      FL.game = this; this.net = this.startData.pid ? FL.net : null;
       this.makeTextures();
       FL.sfx = k => this.sfx(k);
-      if (this.cache.audio.exists('sfx_fire_crackle_loop')) { try { this.fireLoop = this.sound.add('sfx_fire_crackle_loop', { loop: true, volume: 0.25 }); this.fireLoop.play(); } catch (e) {} this.events.once('shutdown', () => this.fireLoop && this.fireLoop.stop()); }
+      if (this.cache.audio.exists('sfx_fire_crackle_loop')) { try { this.fireLoop = this.sound.add('sfx_fire_crackle_loop', { loop: true, volume: 0.25 }); this.fireLoop.play(); FL.applySettings && FL.applySettings(); } catch (e) {} this.events.once('shutdown', () => this.fireLoop && this.fireLoop.stop()); }
       const sd = this.startData.save;
       this.seed = sd ? sd.seed : (this.startData.seed >>> 0);
       this.slot = this.startData.slot || 1;
       const wg = FL.genWorld(this.seed);
       this.ground = wg.ground; this.obj = wg.obj;
-      this.objHp = new Map(); this.regrow = new Map(); this.diffs = new Set();
+      this.objHp = new Map(); this.regrow = new Map(); this.diffs = new Set(); this.gDiffs = new Set(); this.waterT = 0;
       this.explored = new Uint8Array(W * H); this.vis = new Uint8Array(W * H); this.light = new Uint8Array(W * H);
       this.bAt = new Map(); this.buildings = []; this.villagers = []; this.enemies = []; this.claims = new Set();
-      this.players = {}; this._actor = null; this.localId = 'p1';
+      this.players = {}; this._actor = null; this.localId = this.startData.pid || 'p1';
       this.storage = {}; this.over = false; this.fogTimer = 0; this.uiTimer = 0; this.autoTimer = 0; this.spawnTimer = 0;
       this.nextVid = 1;
 
@@ -56,7 +60,7 @@
       this.gLayer = this.map.createBlankLayer('ground', tsG).setDepth(0);
       this.oLayer = this.map.createBlankLayer('objs', tsO).setDepth(1);
       this.fLayer = this.map.createBlankLayer('fog', tsF).setDepth(50);
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { this.gLayer.putTileAt(this.ground[idx(x, y)], x, y); this.fLayer.putTileAt(20, x, y).alpha = 0.97; }
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { this.gLayer.putTileAt(gTile(this.ground[idx(x, y)]), x, y); this.fLayer.putTileAt(20, x, y).alpha = 0.97; }
 
       this.bars = this.add.graphics().setDepth(60);
       this.tint = this.add.rectangle(0, 0, 10, 10, 0x2a3560, 1).setOrigin(0).setScrollFactor(0).setDepth(49).setBlendMode(Phaser.BlendModes.MULTIPLY).setAlpha(0);
@@ -76,13 +80,15 @@
       fitZoom(); this.scale.on('resize', fitZoom);
 
       // input
-      this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,F');
+      this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE');
       this.input.keyboard.addCapture('SPACE,UP,DOWN,LEFT,RIGHT');
       const kb = this.input.keyboard;
       kb.on('keydown-E', () => FL.ui.toggleInv());
       kb.on('keydown-B', () => FL.ui.toggleBuild());
       kb.on('keydown-T', () => this.exec({ t: 'torch' }));
       kb.on('keydown-Q', () => this.exec({ t: 'deposit' }));
+      kb.on('keydown-G', () => { const p = this.local, f = p.face || [0, 1]; this.exec({ t: 'dig', x: tc(p.x + f[0] * T), y: tc(p.y + f[1] * T) }); });
+      kb.on('keydown-F', () => this.exec({ t: 'water' }));
       kb.on('keydown-ESC', () => { if (this.ghostType) this.cancelGhost(); else FL.ui.closeAll(); });
       kb.on('keydown-ENTER', () => { if (this.ghostType) this.tryPlace(); });
       for (let n = 1; n <= 8; n++) kb.on('keydown-' + ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT'][n - 1], () => this.exec({ t: 'select', slot: n - 1 }));
@@ -101,7 +107,7 @@
       const mk = (key, w, h, fn) => { const t = this.textures.createCanvas(key, w, h); fn(t.getContext(), w, h); t.refresh(); };
       const r = FL.rng(42);
       const shade = (hex, f) => { const c = Phaser.Display.Color.IntegerToColor(hex); return `rgb(${Math.min(255, c.red * f) | 0},${Math.min(255, c.green * f) | 0},${Math.min(255, c.blue * f) | 0})`; };
-      mk('tiles', T * 6, T, ctx => {
+      mk('tiles', T * 7, T, ctx => {
         [C.water, C.sand, C.grass, C.dirt, C.stone].forEach((c, k) => {
           ctx.fillStyle = css(c); ctx.fillRect(k * T, 0, T, T);
           for (let n = 0; n < 14; n++) { ctx.fillStyle = shade(c, r() < 0.5 ? 0.88 : 1.1); ctx.fillRect(k * T + r() * 30, r() * 30, 2, 2); }
@@ -109,6 +115,8 @@
         });
         ctx.fillStyle = css(C.water); ctx.fillRect(5 * T, 0, T, T); ctx.strokeStyle = shade(C.water, 1.25);
         ctx.beginPath(); ctx.moveTo(5 * T + 3, 14); ctx.lineTo(5 * T + 12, 12); ctx.moveTo(5 * T + 18, 26); ctx.lineTo(5 * T + 29, 24); ctx.moveTo(5 * T + 20, 6); ctx.lineTo(5 * T + 26, 5); ctx.stroke();
+        ctx.fillStyle = '#4a3622'; ctx.fillRect(6 * T, 0, T, T); ctx.fillStyle = '#2e2216'; ctx.fillRect(6 * T + 4, 4, T - 8, T - 8);
+        ctx.fillStyle = '#5c4630'; for (let n = 0; n < 8; n++) ctx.fillRect(6 * T + 5 + r() * 20, 5 + r() * 20, 2, 2);
       });
       mk('objs', T * 8, T, ctx => {
         const at = k => k * T;
@@ -132,7 +140,7 @@
       { const tex = this.textures.get('objs'), ctx = tex.getContext(); ctx.imageSmoothingEnabled = false;
         const src = k => this.textures.exists('spr_' + k) && this.textures.get('spr_' + k).getSourceImage();
         const tr = src('tree'), rk = src('rocks');
-        if (tr) { ctx.clearRect(T, 0, T, T); ctx.drawImage(tr, 0, 0, 32, 48, T + 5, 0, 22, 32); }
+        if (tr) ctx.clearRect(T, 0, T, T); // trees drawn as 2x sprite images in drawObj
         if (rk) { ctx.clearRect(2 * T, 0, T, T); ctx.drawImage(rk, 0, 0, 16, 16, 2 * T, 0, 32, 32); ctx.clearRect(5 * T, 0, T, T); ctx.drawImage(rk, 32, 0, 16, 16, 5 * T, 0, 32, 32); }
         tex.refresh(); }
       mk('fogt', T, T, ctx => { ctx.fillStyle = css(C.fog); ctx.fillRect(0, 0, T, T); });
@@ -183,6 +191,16 @@
     drawObj(i) {
       const o = this.obj[i], x = i % W, y = (i / W) | 0;
       if (o) this.oLayer.putTileAt(10 + o, x, y); else this.oLayer.removeTileAt(x, y);
+      if (!this.textures.exists('spr_tree')) return; this.treeImg = this.treeImg || new Map();
+      const ti = this.treeImg.get(i);
+      if (o === 1 && !ti) this.treeImg.set(i, this.add.image(center(x), (y + 1) * T, 'spr_tree', (x + y) & 1).setOrigin(0.5, 1).setScale(2).setDepth(4 + y / H));
+      else if (o !== 1 && ti) { ti.destroy(); this.treeImg.delete(i); }
+    }
+    setGround(i, v) { this.ground[i] = v; this.gDiffs.add(i); const t = this.gLayer.getTileAt(i % W, (i / W) | 0); if (t) t.index = gTile(v); else this.gLayer.putTileAt(gTile(v), i % W, (i / W) | 0); }
+    digCmd(x, y, pid) {
+      const w = { ground: this.ground, obj: this.obj, occupied: i => this.bAt.has(i) }, i = y * W + x;
+      if (!FL.dig || !FL.dig(w, this.player, x, y, pid, Date.now(), null)) { this.say(this.inv['Digging Stick'] || this.inv['Flint Axe'] ? 'Cannot dig there' : 'Need a Digging Stick'); return false; }
+      this.setGround(i, this.ground[i]); this.syncHotbar && this.syncHotbar(); this.say('Dug a pit. Water fills pits next to water.'); return true;
     }
     setObj(i, o) { this.obj[i] = o; this.objHp.delete(i); this.diffs.add(i); this.drawObj(i); }
 
@@ -519,8 +537,9 @@
       if (this.over || !FL.ui.playing) return;
       const dt = Math.min(0.05, dms / 1000);
       // time
+      const cl = !!(this.net && this.net.client);
       const prevNight = this.isNight();
-      this.time.t += dt / FL.DAY_LEN;
+      if (!cl) this.time.t += dt / FL.DAY_LEN;
       if (this.time.t >= 1) { this.time.t -= 1; this.time.day++; this.onDawn(); }
       if (this.isNight() !== prevNight) { if (this.isNight()) this.sfx('day_to_night'); FL.ui.toast(this.isNight() ? 'Night falls. Stay in the light.' : 'Dawn. The shadows melt away.'); for (const v of this.villagers) if (!v.haul && v.state !== 'chop' && v.state !== 'building') { v.path = null; this.release(v); v.state = null; v.think = 0; } }
       // player
@@ -529,15 +548,19 @@
         if (k.A.isDown || k.LEFT.isDown) mx -= 1; if (k.D.isDown || k.RIGHT.isDown) mx += 1;
         if (k.W.isDown || k.UP.isDown) my -= 1; if (k.S.isDown || k.DOWN.isDown) my += 1;
         if (FL.input.stick.x || FL.input.stick.y) { mx = FL.input.stick.x; my = FL.input.stick.y; }
-        this.exec({ t: 'input', mx, my, act: !!(k.SPACE.isDown || k.F.isDown || FL.input.actionHeld) }); }
+        this.exec({ t: 'input', mx, my, act: !!(k.SPACE.isDown || FL.input.actionHeld) }); }
       for (const id in this.players) this.as(id, () => this.stepPlayer(dt));
       // villagers
+      if (this.net) this.net.frame(dt);
+      if (!cl) {
       for (const v of this.villagers) if (v.hp > 0) this.updateVillager(v, dt);
       for (const v of this.villagers.slice()) if (v.hp <= 0) { this.release(v); if (v.haul) { this.storage[v.haul.k] = (this.storage[v.haul.k] || 0) + v.haul.n; v.haul.b.incoming[v.haul.k] -= v.haul.n; } FL.ui.toast(`${v.name} has died.`); v.destroy(); this.villagers.splice(this.villagers.indexOf(v), 1); }
       if (!this.villagers.length) { this.over = true; FL.ui.gameOver(this.time.day); return; }
       this.updateEnemies(dt);
       // regrow
+      this.waterT += dt; if (this.waterT >= 1) { this.waterT = 0; for (const i of FL.waterTick ? FL.waterTick(this.ground) : []) this.setGround(i, this.ground[i]); }
       if (this.regrow.size) { const now = this.worldTime(); for (const [i, at] of this.regrow) if (now >= at) { this.regrow.delete(i); if (this.obj[i] === O.BUSH_EMPTY) this.setObj(i, O.BUSH); } }
+      }
       // glows
       const nf = this.nightF();
       for (const b of this.buildings) if (b.glow) { const f = Math.sin(this.animT * 9 + b.tx) * 0.04 + Math.random() * 0.04; b.glow.setAlpha(0.15 + 0.35 * nf + f).setScale((b.type === 'torch' ? 0.9 : 1.4) * (1 + f)); }
@@ -549,7 +572,7 @@
       for (const id in this.players) this.animEnt(this.players[id], dt, 0.08); for (const v of this.villagers) this.animEnt(v, dt, 0.08); for (const e of this.enemies) this.animEnt(e, dt, e.kind === 'shadow' ? 0.15 : 0.1, true);
       this.drawBars(); this.drawGhost();
       this.uiTimer -= dt; if (this.uiTimer <= 0) { this.uiTimer = 0.25; FL.ui.refresh(); }
-      this.autoTimer += dt; if (this.autoTimer > 60) { this.autoTimer = 0; FL.ui.autosave(); }
+      if (!cl) this.autoTimer += dt; if (this.autoTimer > 60) { this.autoTimer = 0; FL.ui.autosave(); }
     }
     animEnt(e, dt, amp, wob) {
       const moved = e._px !== undefined && Math.hypot(e.x - e._px, e.y - e._py) > 0.3;
@@ -620,6 +643,7 @@
       if (this.over || !FL.ui.playing) return false;
       const pid = cmd.pid || this.localId; if (!this.players[pid]) return false;
       if (this.onCommand) this.onCommand({ ...cmd, pid }); // hook for a future network layer
+      if (this.net && this.net.client && pid === this.localId) return this.net.forward(cmd);
       return this.as(pid, () => {
         switch (cmd.t) {
           case 'input': this.player.input = { mx: +cmd.mx || 0, my: +cmd.my || 0, act: !!cmd.act }; return true;
@@ -629,6 +653,8 @@
           case 'deposit': return this.deposit(true);
           case 'torch': { const n = this.buildings.length; this.placeTorch(); if (this.buildings.length > n) this.sfx('torch_light'); return true; }
           case 'select': this.select(cmd.slot | 0); return true;
+          case 'dig': return this.digCmd(cmd.x | 0, cmd.y | 0, pid);
+          case 'water': { const ok = !!FL.gatherWater && FL.gatherWater(this, this.player, tc(this.player.x), tc(this.player.y)); this.say(ok ? 'Filled a Water Pot' : (this.inv['Clay Pot'] ? 'Stand next to water' : 'Need an empty Clay Pot')); return ok; }
           case 'place': { const ok = this.placeCmd(cmd.type, cmd.x | 0, cmd.y | 0); if (ok) this.sfx('place_building'); return ok; }
         }
         return false;
@@ -643,7 +669,7 @@
       const p = this.local;
       return { game: 'firstlight', v: FL.SAVE_VERSION, appVersion: FL.VERSION, seed: this.seed, savedAt: Date.now(), time: { ...this.time },
         player: { x: p.x, y: p.y, hp: p.hp }, inv: this.inv, hotbar: this.hotbar, sel: this.sel,
-        players: Object.values(this.players).map(q => ({ id: q.id, x: q.x, y: q.y, hp: q.hp, inv: q.inv, hotbar: q.hotbar, sel: q.sel })), storage: this.storage, changes,
+        players: Object.values(this.players).map(q => ({ id: q.id, x: q.x, y: q.y, hp: q.hp, inv: q.inv, hotbar: q.hotbar, sel: q.sel })), storage: this.storage, changes, ground: [...this.gDiffs].map(i => [i, this.ground[i]]),
         buildings: this.buildings.map(b => ({ type: b.type, tx: b.tx, ty: b.ty, done: b.done, delivered: b.delivered, work: b.work })),
         villagers: this.villagers.map(v => ({ x: v.x, y: v.y, hp: v.hp, hunger: v.hunger, name: v.name, carry: v.carry, haul: v.haul ? { k: v.haul.k, n: v.haul.n } : null })),
         explored: btoa(bin), summary: { day: this.time.day, pop: this.villagers.length } };
@@ -651,11 +677,13 @@
     loadSave(s) {
       this.time = { ...s.time }; this.inv = s.inv || {}; this.hotbar = s.hotbar || new Array(8).fill(null); this.sel = s.sel || 0; this.storage = s.storage || {};
       for (const i in s.changes) { const [o, hp, rg] = s.changes[i]; const n = +i; this.obj[n] = o; this.diffs.add(n); if (hp) this.objHp.set(n, hp); if (rg) this.regrow.set(n, rg); }
+      for (const [i, v] of s.ground || []) this.setGround(i, v);
       for (const b of s.buildings) this.addBuilding(b.type, b.tx, b.ty, b.done, { delivered: b.delivered || {}, work: b.work || 0 });
       for (const v of s.villagers) { let carry = v.carry; if (v.haul) { carry = carry || {}; carry[v.haul.k] = (carry[v.haul.k] || 0) + v.haul.n; } this.addVillager(v.x, v.y, { hp: v.hp, hunger: v.hunger, name: v.name, carry }); }
       const bin = atob(s.explored || ''); for (let k = 0; k < bin.length; k++) { const b = bin.charCodeAt(k); for (let j = 0; j < 8; j++) if (b & (1 << j)) this.explored[k * 8 + j] = 1; }
       this.local.setPosition(s.player.x, s.player.y); this.local.hp = s.player.hp;
-      for (const q of s.players || []) if (q.id === this.localId) Object.assign(this.local, { inv: q.inv || {}, hotbar: q.hotbar || this.local.hotbar, sel: q.sel || 0 });
+      for (const q of s.players || []) if (q.id === this.localId) { Object.assign(this.local, { inv: q.inv || {}, hotbar: q.hotbar || this.local.hotbar, sel: q.sel || 0 }); if (this.startData.pid) this.local.setPosition(q.x, q.y); }
+        else if (this.startData.pid && !this.players[q.id]) this.addPlayer(q.id, q.x, q.y);
       this.syncHotbar();
     }
   }
